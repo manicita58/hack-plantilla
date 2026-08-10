@@ -195,6 +195,11 @@ interpretado. Es un techo, no una reserva.
 **`springdoc-openapi` 3.x, no 2.x.** La línea 2.x es para Spring Boot 3. Con Boot
 4 hay que usar la 3.x o el arranque falla.
 
+**`forward-headers-strategy: framework`.** Traefik termina el TLS y le pasa HTTP
+plano a la app. Sin esto Spring cree que la petición vino por HTTP y genera todas
+las URLs absolutas con `http://` — el Swagger queda con un server `http://` y el
+"Try it out" falla por mixed content. Afecta también a redirects y `Location`.
+
 **Postgres 18 monta en `/var/lib/postgresql`, no en `.../data`.** Desde la 18 la
 imagen guarda los datos en un subdirectorio versionado (`18/docker`) para poder
 hacer `pg_upgrade --link`. Con el mount viejo el contenedor entra en crash loop y

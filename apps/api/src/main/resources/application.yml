@@ -20,6 +20,11 @@ spring:
 
 server:
   port: 8080
+  # Traefik termina el TLS y le pasa HTTP plano a la app. Sin esto Spring cree
+  # que la petición vino por HTTP y genera TODAS las URLs absolutas con http://
+  # (Swagger, redirects, headers Location), que el browser bloquea por mixed
+  # content. `framework` hace que respete los headers X-Forwarded-* del proxy.
+  forward-headers-strategy: framework
 
 app:
   # Orígenes que pueden llamar a la API desde el browser. Coma como separador.
