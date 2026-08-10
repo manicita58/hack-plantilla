@@ -57,7 +57,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - ${PGDATA_DIR}:/var/lib/postgresql/data
+      # OJO: Postgres 18 cambió la convención. El mount va en /var/lib/postgresql
+      # (NO en .../data como en 16 y 17): la imagen guarda los datos en un
+      # subdirectorio versionado, `18/docker`, para permitir `pg_upgrade --link`.
+      # Montarlo en .../data hace que el contenedor arranque y muera en loop.
+      - ${PGDATA_DIR}:/var/lib/postgresql
     networks: [internal]        # NO 'edge' -> inalcanzable desde internet
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]

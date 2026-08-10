@@ -195,6 +195,11 @@ interpretado. Es un techo, no una reserva.
 **`springdoc-openapi` 3.x, no 2.x.** La línea 2.x es para Spring Boot 3. Con Boot
 4 hay que usar la 3.x o el arranque falla.
 
+**Postgres 18 monta en `/var/lib/postgresql`, no en `.../data`.** Desde la 18 la
+imagen guarda los datos en un subdirectorio versionado (`18/docker`) para poder
+hacer `pg_upgrade --link`. Con el mount viejo el contenedor entra en crash loop y
+el `up -d` **no da error**: solo lo ves como `Restarting (1)` en `docker ps`.
+
 **CORS se configura en el back, no en el front.** El browser bloquea la respuesta
 antes de que el JS la vea, y el error que reporta (`TypeError: Failed to fetch`)
 no dice nada útil. Si el front no carga datos pero `curl` a la API anda, mirá
