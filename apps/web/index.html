@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hack-plantilla</title>
+<style>
+  :root {
+    --bg: #fbfbfd; --card: #fff; --text: #16181d; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb; --accent-text: #fff; --error: #b91c1c;
+    /* Escala de radios: contenedor y control. Dos pasos, nada más. */
+    --r-card: 12px; --r-control: 8px;
+    /* Escala tipográfica: 28 / 16 / 13. Ratios 1.75 y 1.23. */
+    --t-title: 1.75rem; --t-small: 0.8125rem;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0f14; --card: #161920; --text: #e8eaed; --muted: #9aa1ac;
+      --line: #262a33; --accent: #5b8cff; --accent-text: #0d0f14; --error: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem; background: var(--bg); color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 34rem; margin: 0 auto; }
+  h1 { font-size: var(--t-title); margin: 0 0 .25rem; letter-spacing: -.02em; }
+  .sub { color: var(--muted); font-size: var(--t-small); margin: 0 0 2rem; }
+  .sub code { word-break: break-all; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-card); padding: 1.25rem;
+  }
+  form { display: flex; gap: .5rem; margin-bottom: 1.25rem; }
+  input {
+    flex: 1; min-width: 0; padding: .625rem .75rem; font: inherit;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button {
+    padding: .625rem 1.1rem; font: inherit; font-weight: 550; cursor: pointer;
+    color: var(--accent-text); background: var(--accent);
+    border: 0; border-radius: 8px;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 1rem; padding: .7rem 0; border-top: 1px solid var(--line);
+  }
+  li:first-child { border-top: 0; }
+  time { color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }
+  .msg { color: var(--muted); font-size: .875rem; padding: .7rem 0; }
+  .msg.error { color: var(--error); }
+</style>
+</head>
+<body>
+<main>
+  <h1>hack-plantilla</h1>
+  <p class="sub">Front mínimo consumiendo <code id="api-url"></code></p>
+
+  <div class="card">
+    <form id="form">
+      <input id="name" placeholder="Nombre del item" required maxlength="120" autocomplete="off">
+      <button type="submit">Agregar</button>
+    </form>
+    <ul id="list"></ul>
+    <p class="msg" id="msg">Cargando…</p>
+  </div>
+</main>
+
+<script>
+// Deriva la URL del back del dominio actual: en produccion el front vive en
+// `dominio.com` y el back en `api.dominio.com`. Cambiala a mano si tu setup
+// no sigue esa convencion.
+const API_BASE = ["localhost", "127.0.0.1"].includes(location.hostname)
+  ? "http://localhost:8080"
+  : `https://api.${location.hostname.replace(/^www\./, "")}`;
+
+const $list = document.getElementById("list");
+const $msg = document.getElementById("msg");
+const $form = document.getElementById("form");
+const $name = document.getElementById("name");
+document.getElementById("api-url").textContent = API_BASE;
+
+const show = (text, isError = false) => {
+  $msg.textContent = text;
+  $msg.hidden = !text;
+  $msg.classList.toggle("error", isError);
+};
+
+const render = (items) => {
+  $list.replaceChildren(...items.map((item) => {
+    const li = document.createElement("li");
+    const name = document.createElement("span");
+    name.textContent = item.name;             // textContent, no innerHTML: sin XSS
+    const when = document.createElement("time");
+    when.dateTime = item.createdAt;
+    when.textContent = new Date(item.createdAt).toLocaleString();
+    li.append(name, when);
+    return li;
+  }));
+};
+
+async function load() {
+  try {
+    const res = await fetch(`${API_BASE}/items`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const items = await res.json();
+    render(items);
+    show(items.length ? "" : "Todavía no hay items. Agregá el primero.");
+  } catch (err) {
+    // Un fallo de CORS llega como TypeError sin detalle: la causa mas comun es
+    // que este origen no este en CORS_ORIGINS del .env del back.
+    show(`No se pudo leer la API (${err.message}). Revisá que esté arriba y que este origen esté en CORS_ORIGINS.`, true);
+  }
+}
+
+$form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const name = $name.value.trim();
+  if (!name) return;
+
+  const button = $form.querySelector("button");
+  button.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    $name.value = "";
+    await load();
+  } catch (err) {
+    show(`No se pudo guardar (${err.message}).`, true);
+  } finally {
+    button.disabled = false;
+    $name.focus();
+  }
+});
+
+load();
+</script>
+</body>
+</html>

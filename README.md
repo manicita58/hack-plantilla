@@ -1,33 +1,55 @@
 # hack-plantilla
 
-Plantilla de proyecto para el VPS: **Spring Boot 4.1 + Java 25 + PostgreSQL 18**,
-lista para desplegar detrás del Traefik compartido de `/opt/edge`.
+Plantilla de proyecto para el VPS: **Spring Boot 4.1 + Java 25 + PostgreSQL 18**
++ front estático, lista para desplegar detrás del Traefik compartido de `/opt/edge`.
 
-Verificada de punta a punta: compila, Flyway migra, JPA valida el esquema, el
-CRUD escribe y lee, y el test pasa.
+Verificada de punta a punta: compila, Flyway migra, JPA valida el esquema, el CRUD
+escribe y lee, Swagger responde, CORS deja pasar los orígenes permitidos y bloquea
+el resto, y el test pasa.
 
 ```
 apps/api/                 backend Spring Boot
-  src/main/java/…         Application, Item, ItemRepository, ItemController
+  src/main/java/…         Application, Item, ItemRepository, ItemController, CorsConfig
   src/main/resources/
     application.yml       config; /health en la raíz, no en /actuator
     db/migration/         migraciones Flyway (V1__init.sql, V2__…, …)
   Dockerfile              multi-stage: build con JDK, runtime con JRE
+apps/web/index.html       front: un archivo, sin build step ni dependencias
 docker-compose.prod.yml   producción: api + db, SIN proxy (es del server)
 docker-compose.yml        desarrollo local: solo la base
 .github/workflows/        test -> build -> deploy
 ```
+
+| URL | Qué es |
+|---|---|
+| `/health` | estado, lo miran el healthcheck de Docker y Traefik |
+| `/items` | CRUD de ejemplo (GET, POST) |
+| `/swagger-ui.html` | Swagger UI |
+| `/v3/api-docs` | el OpenAPI en JSON |
 
 ## Desarrollo local
 
 ```bash
 docker compose up -d                    # levanta Postgres en :5432
 cd apps/api && mvn spring-boot:run
+```
 
+```bash
 curl localhost:8080/health
 curl -X POST localhost:8080/items -H 'Content-Type: application/json' -d '{"name":"hola"}'
 curl localhost:8080/items
+xdg-open http://localhost:8080/swagger-ui.html
 ```
+
+Y el front, en otra terminal:
+
+```bash
+cd apps/web && python3 -m http.server 5500
+xdg-open http://127.0.0.1:5500
+```
+
+El front detecta `localhost` y apunta solo a `http://localhost:8080`. Ese origen
+ya viene en el default de `app.cors-origins`, así que funciona sin configurar nada.
 
 ## Desplegarlo — paso a paso
 
@@ -85,7 +107,12 @@ cd /opt/hack && cp env.example .env && vim .env
 #   API_DOMAIN=api.tudominio.com
 #   GHCR_REPO=OWNER/hack/api
 #   POSTGRES_PASSWORD=$(openssl rand -hex 24)
+#   CORS_ORIGINS=https://tudominio.com,https://www.tudominio.com
 ```
+
+> `CORS_ORIGINS` tiene que listar el dominio **del front**, no el de la API. Si
+> falta, el back responde bien por `curl` y el front falla con un error de CORS
+> que en el browser parece "no hay conexión".
 
 ### 6. Login a GHCR (una vez por server, no por proyecto)
 
@@ -115,7 +142,30 @@ curl -sI https://api.tudominio.com/health      # 200 — dale ~60s al certificad
 curl -X POST https://api.tudominio.com/items -H 'Content-Type: application/json' -d '{"name":"ok"}'
 ```
 
+Y abrí `https://api.tudominio.com/swagger-ui.html` en el browser.
+
 De acá en más, cada push a `main` que toque `apps/api/**` despliega solo.
+
+### 9. El front, en Cloudflare Pages
+
+El front **no va al VPS**: es estático, lo sirve Cloudflare gratis desde su CDN.
+
+1. Cloudflare → **Workers & Pages** → **Create** → **Pages** → conectá el repo.
+2. **Root directory:** `apps/web`
+3. **Build command:** vacío — no hay build, es un `index.html`.
+4. **Output directory:** `.` (el mismo `apps/web`)
+5. **Custom domain:** `tudominio.com` (y `www`), que quedan **proxied (naranja)**.
+
+El front deduce la URL del back del dominio: si está en `tudominio.com`, pega a
+`https://api.tudominio.com`. Si tu setup no sigue esa convención, cambiá el
+`API_BASE` que está al principio del `<script>`.
+
+Cada push a `main` redespliega el front solo, sin tocar nada del VPS. Esa es toda
+la "CI del front": Cloudflare la maneja, no hace falta workflow.
+
+> Si preferís el front **también** en el VPS (SSR real con Next/Nuxt, por
+> ejemplo), agregás un servicio `web` al compose con su propio router. Está
+> documentado en `/opt/edge/NUEVO-PROYECTO.md`. Perdés el CDN y sumás RAM.
 
 ## Detalles que no son obvios
 
@@ -141,3 +191,11 @@ global en todo el server: dos proyectos con un router `api` se pisan en silencio
 
 **640MB de límite para la API.** Una JVM necesita más aire que un runtime
 interpretado. Es un techo, no una reserva.
+
+**`springdoc-openapi` 3.x, no 2.x.** La línea 2.x es para Spring Boot 3. Con Boot
+4 hay que usar la 3.x o el arranque falla.
+
+**CORS se configura en el back, no en el front.** El browser bloquea la respuesta
+antes de que el JS la vea, y el error que reporta (`TypeError: Failed to fetch`)
+no dice nada útil. Si el front no carga datos pero `curl` a la API anda, mirá
+`CORS_ORIGINS`.

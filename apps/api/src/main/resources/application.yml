@@ -21,6 +21,17 @@ spring:
 server:
   port: 8080
 
+app:
+  # Orígenes que pueden llamar a la API desde el browser. Coma como separador.
+  # El default cubre el `index.html` abierto local y los dev servers típicos.
+  cors-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html    # la UI
+  api-docs:
+    path: /v3/api-docs        # el JSON de OpenAPI
+
 management:
   endpoints:
     web:
