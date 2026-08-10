@@ -1,0 +1,76 @@
+# Producción. El proxy (Traefik) NO está acá: es del server, vive en /opt/edge
+# y se comparte con los demás proyectos. Ver /opt/edge/NUEVO-PROYECTO.md
+#
+# Nombre de proyecto explícito -> contenedores `hack-*` sin importar cómo se
+# llame el directorio.
+name: hack
+
+x-logging: &default-logging
+  driver: "json-file"
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  api:
+    image: ghcr.io/${GHCR_REPO}:latest
+    restart: unless-stopped
+    logging: *default-logging
+    env_file: .env
+    environment:
+      # Formato JDBC (no el de SQLAlchemy). `db` es el nombre del servicio.
+      DATABASE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+    networks: [edge, internal]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      # wget viene en busybox, que trae la imagen alpine. Sin curl.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s      # la JVM tarda en arrancar; sin esto queda unhealthy
+    deploy:
+      resources:
+        # La JVM necesita más aire que un runtime interpretado. El Dockerfile
+        # usa -XX:MaxRAMPercentage=70, así que el heap se ata a este número.
+        limits: { cpus: "0.75", memory: 640M }
+        reservations: { memory: 256M }
+    labels:
+      - "traefik.enable=true"
+      # Los nombres de router/middleware son GLOBALES en todo el server: si otro
+      # proyecto define "api", se pisan. Prefijar siempre.
+      - "traefik.http.routers.hack-api.rule=Host(`${API_DOMAIN}`)"
+      - "traefik.http.routers.hack-api.entrypoints=websecure"
+      - "traefik.http.routers.hack-api.tls.certresolver=le"
+      - "traefik.http.services.hack-api.loadbalancer.server.port=8080"
+      - "traefik.http.services.hack-api.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.routers.hack-api.middlewares=hack-ratelimit,secure-headers@file"
+      - "traefik.http.middlewares.hack-ratelimit.ratelimit.average=50"
+      - "traefik.http.middlewares.hack-ratelimit.ratelimit.burst=100"
+
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    logging: *default-logging
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ${PGDATA_DIR}:/var/lib/postgresql/data
+    networks: [internal]        # NO 'edge' -> inalcanzable desde internet
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits: { memory: 384M }
+
+networks:
+  edge:
+    name: edge
+    external: true    # la gobierna /opt/edge, no este proyecto
+  internal:
+    internal: true

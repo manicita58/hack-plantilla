@@ -1,0 +1,19 @@
+# Solo para desarrollo local: levanta la base y nada más.
+# La app la corrés desde el IDE o con `./mvnw spring-boot:run` en apps/api.
+#
+#   docker compose up -d
+#   cd apps/api && mvn spring-boot:run
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: hack
+      POSTGRES_PASSWORD: hack
+      POSTGRES_DB: hack
+    ports:
+      - "5432:5432"      # expuesto a propósito: es local, no producción
+    volumes:
+      - pgdata-dev:/var/lib/postgresql/data
+
+volumes:
+  pgdata-dev:

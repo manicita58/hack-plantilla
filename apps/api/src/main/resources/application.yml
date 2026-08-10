@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: hack-plantilla-api
+
+  datasource:
+    # En producción lo inyecta docker-compose. Los defaults son para correr local.
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/hack}
+    username: ${POSTGRES_USER:hack}
+    password: ${POSTGRES_PASSWORD:hack}
+
+  jpa:
+    hibernate:
+      # El esquema lo maneja Flyway, no Hibernate. `validate` avisa si el código
+      # y las migraciones se desincronizan, en vez de mutar la tabla por su cuenta.
+      ddl-auto: validate
+    open-in-view: false
+
+  flyway:
+    enabled: true    # corre src/main/resources/db/migration al arrancar
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      # Deja el health en /health y no en /actuator/health: es la convención
+      # del server (healthcheck de Docker y de Traefik apuntan ahí).
+      base-path: /
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true

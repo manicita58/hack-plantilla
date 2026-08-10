@@ -1,0 +1,19 @@
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Llaves SSH — nunca commitear
+*.pem
+id_ed25519*
+id_rsa*
+
+# Java / Maven
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store

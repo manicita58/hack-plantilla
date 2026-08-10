@@ -1,0 +1,95 @@
+name: deploy
+
+on:
+  push:
+    branches: [main]
+    # Sin este filtro, cada cambio de README dispara un deploy.
+    paths:
+      - 'apps/api/**'
+      - '.github/workflows/deploy.yml'
+      - 'docker-compose.prod.yml'
+  # Disparo manual: re-desplegar sin inventar un commit, y comprobar que los
+  # secrets y el pull de GHCR siguen vivos.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/api
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: hack
+          POSTGRES_PASSWORD: hack
+          POSTGRES_DB: hack
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - run: mvn -B test
+        working-directory: apps/api
+        env:
+          DATABASE_URL: jdbc:postgresql://localhost:5432/hack
+          POSTGRES_USER: hack
+          POSTGRES_PASSWORD: hack
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # efímero, no es un PAT
+      - uses: docker/build-push-action@v6
+        with:
+          context: ./apps/api
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            # `set -e` NO es opcional: sin él la acción sigue después de cada
+            # error y el job toma el exit code del último comando. Un deploy que
+            # falló entero se reporta en VERDE. (`script_stop` no existe en v1.)
+            set -euo pipefail
+            cd /opt/hack
+            git pull origin main
+            docker compose -f docker-compose.prod.yml pull api
+            # Sin paso de migraciones: Flyway las corre solo al arrancar la app.
+            docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps api
+            docker image prune -f
