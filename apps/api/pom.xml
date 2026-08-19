@@ -61,6 +61,15 @@
       <version>3.1.0</version>
     </dependency>
 
+    <!-- Solo desarrollo: al recompilar (IDE o `mvn compile`) reinicia la app en
+         ~1s en vez de ~10s, y sirve los estáticos sin caché. `optional` para que
+         no se propague, y el plugin de Boot lo excluye del jar de producción. -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-devtools</artifactId>
+      <optional>true</optional>
+    </dependency>
+
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>

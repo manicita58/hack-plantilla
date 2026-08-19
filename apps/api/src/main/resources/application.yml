@@ -18,6 +18,21 @@ spring:
   flyway:
     enabled: true    # corre src/main/resources/db/migration al arrancar
 
+  web:
+    resources:
+      # Los 4 primeros son el default de Boot (los repito porque esta clave los
+      # reemplaza, y sin `classpath:/META-INF/resources/` se cae Swagger UI).
+      # El último sirve apps/web desde el disco al correr `mvn spring-boot:run`
+      # en apps/api: el front queda en http://localhost:8080 junto a la API, o
+      # sea mismo origen y CERO problemas de CORS mientras desarrollás.
+      # En el contenedor esa ruta no existe y Spring la ignora.
+      static-locations:
+        - classpath:/META-INF/resources/
+        - classpath:/resources/
+        - classpath:/static/
+        - classpath:/public/
+        - file:../../apps/web/
+
 server:
   port: 8080
   # Traefik termina el TLS y le pasa HTTP plano a la app. Sin esto Spring cree

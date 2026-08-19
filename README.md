@@ -7,6 +7,10 @@ Verificada de punta a punta: compila, Flyway migra, JPA valida el esquema, el CR
 escribe y lee, Swagger responde, CORS deja pasar los orígenes permitidos y bloquea
 el resto, y el test pasa.
 
+Trae de ejemplo una **cadena de bloques sobre la tabla `items`**: cada item se
+sella con el hash del anterior, `/chain/verify` recalcula la cadena entera y el
+front lo muestra en un escudo de verificado (ver [La cadena](#la-cadena)).
+
 ```
 apps/api/                 backend Spring Boot
   src/main/java/…         Application, Item, ItemRepository, ItemController,
@@ -17,6 +21,7 @@ apps/api/                 backend Spring Boot
   Dockerfile              multi-stage: build con JDK, runtime con JRE
 apps/web/index.html       front: un archivo, sin build step ni dependencias
 apps/web/blockchain.svg   ícono del bloque (lucide `boxes`, ISC); va inline en el html
+Makefile                  atajos de desarrollo: make dev / seed / break / test
 docker-compose.prod.yml   producción: api + db, SIN proxy (es del server)
 docker-compose.yml        desarrollo local: solo la base
 .github/workflows/        test -> build -> deploy
@@ -32,18 +37,33 @@ docker-compose.yml        desarrollo local: solo la base
 
 ## Desarrollo local
 
-```bash
-docker compose up -d                    # levanta Postgres en :5432
-cd apps/api && mvn spring-boot:run
-```
+Necesitás Java 25, Docker y Maven (`sudo dnf install maven`). Después:
 
 ```bash
-curl localhost:8080/health
-curl -X POST localhost:8080/items -H 'Content-Type: application/json' -d '{"name":"hola"}'
-curl localhost:8080/items
-curl localhost:8080/chain/verify
-xdg-open http://localhost:8080/swagger-ui.html
+make            # lista los atajos
+make dev        # base + API + front, todo junto en http://localhost:8080
 ```
+
+`make dev` espera a que Postgres acepte conexiones (healthcheck + `--wait`) y
+recién ahí arranca Spring. El front se sirve desde el mismo Spring leyendo
+`apps/web/` del disco, así que **en local no hay CORS**: mismo origen, y los
+cambios al HTML se ven recargando el browser, sin reiniciar nada.
+
+| Atajo | Qué hace |
+|---|---|
+| `make dev` | lo de arriba, en una sola terminal |
+| `make seed` | mete tres bloques por la API |
+| `make verify` | imprime el estado de la cadena |
+| `make break` | adultera el bloque 1 con SQL: la cadena tiene que romperse |
+| `make test` | los tests (levanta la base si hace falta) |
+| `make front` | sirve el front aparte en `127.0.0.1:5500`, para probar el CORS real |
+| `make reset` | borra base y volumen, se arranca de cero |
+
+Con devtools, recompilar (el IDE al guardar, o `mvn compile` en otra terminal)
+reinicia la app en ~1s en vez de los ~10s del arranque completo. Devtools es
+`optional`: no entra al jar de producción.
+
+Swagger para pegarle a los endpoints sin curl: `http://localhost:8080/swagger-ui.html`.
 
 ## La cadena
 
@@ -58,24 +78,20 @@ parte rota de la cadena.
 Probalo rompiéndola a mano:
 
 ```bash
-docker compose exec db psql -U hack -d hack -c \
-  "UPDATE items SET name='adulterado' WHERE id=1"
-curl localhost:8080/chain/verify   # -> {"valid":false,"blocks":N,"brokenAt":1}
+make seed     # -> {"valid":true,"blocks":3,"brokenAt":null}
+make break    # -> {"valid":false,"blocks":3,"brokenAt":1}
 ```
+
+`make break` es un `UPDATE` crudo por psql, por fuera de la API: exactamente el
+ataque que la cadena existe para delatar. Recargá el front y el escudo está rojo.
 
 No hay red, ni consenso, ni wallets: es un ledger a prueba de manipulación dentro
 de tu propio Postgres. Las filas creadas antes de la migración `V2` no son bloques
 y la verificación las ignora.
 
-Y el front, en otra terminal:
-
-```bash
-cd apps/web && python3 -m http.server 5500
-xdg-open http://127.0.0.1:5500
-```
-
-El front detecta `localhost` y apunta solo a `http://localhost:8080`. Ese origen
-ya viene en el default de `app.cors-origins`, así que funciona sin configurar nada.
+En producción el front vive en otro dominio (`tudominio.com`) y le pega a
+`api.tudominio.com`: ahí sí hay CORS, y ese origen tiene que estar en
+`CORS_ORIGINS`. Con `make front` reproducís ese escenario en local.
 
 ## Desplegarlo — paso a paso
 

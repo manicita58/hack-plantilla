@@ -1,8 +1,7 @@
 # Solo para desarrollo local: levanta la base y nada más.
 # La app la corrés desde el IDE o con `./mvnw spring-boot:run` en apps/api.
 #
-#   docker compose up -d
-#   cd apps/api && mvn spring-boot:run
+#   make dev      (o: docker compose up -d --wait && cd apps/api && mvn spring-boot:run)
 services:
   db:
     image: postgres:18-alpine
@@ -12,6 +11,13 @@ services:
       POSTGRES_DB: hack
     ports:
       - "5432:5432"      # expuesto a propósito: es local, no producción
+    # Sin esto `docker compose up --wait` devuelve apenas arranca el contenedor,
+    # la app le pega antes de tiempo y Flyway muere con "connection refused".
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hack -d hack"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
     volumes:
       - pgdata-dev:/var/lib/postgresql   # Postgres 18: NO es .../data (ver docker-compose.prod.yml)
 
