@@ -45,6 +45,10 @@ server:
 app:
   # Orígenes que pueden llamar a la API desde el browser. Coma como separador.
   # El default cubre `ng serve` (4200) y los dev servers típicos.
+  # Vacío = abierto (local y demos). Con valor, /ai/** y las escrituras de /geo
+  # piden el header X-Api-Token. Ver ApiTokenFilter para qué protege y qué no.
+  api-token: ${API_TOKEN:}
+
   cors-origins: ${CORS_ORIGINS:http://localhost:4200,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500}
 
 # ─── Módulos ────────────────────────────────────────────────────────────────
@@ -83,6 +87,8 @@ ai:
     # Solape para que una idea partida al medio quede entera en algún chunk.
     chunk-overlap: ${AI_CHUNK_OVERLAP:150}
     top-k: ${AI_TOP_K:4}
+    # ~200k caracteres, unas 100 páginas. Más que eso va por partes.
+    max-document-chars: ${AI_MAX_DOCUMENT_CHARS:200000}
 
 springdoc:
   swagger-ui:

@@ -28,24 +28,34 @@ public class RagService {
     private final int chunkSize;
     private final int chunkOverlap;
     private final int topK;
+    private final int maxChars;
 
     public RagService(EmbeddingModel embeddings,
                       ChunkStore chunks,
                       ChatModel model,
                       @Value("${ai.rag.chunk-size}") int chunkSize,
                       @Value("${ai.rag.chunk-overlap}") int chunkOverlap,
-                      @Value("${ai.rag.top-k}") int topK) {
+                      @Value("${ai.rag.top-k}") int topK,
+                      @Value("${ai.rag.max-document-chars}") int maxChars) {
         this.embeddings = embeddings;
         this.chunks = chunks;
         this.model = model;
         this.chunkSize = chunkSize;
         this.chunkOverlap = chunkOverlap;
         this.topK = topK;
+        this.maxChars = maxChars;
     }
 
     public Ingestion ingest(String title, String text) {
         if (title == null || title.isBlank() || text == null || text.isBlank()) {
             throw new IllegalArgumentException("hacen falta título y contenido");
+        }
+        // Un documento gigante son miles de llamadas de embedding en un request:
+        // tarda minutos, cuesta plata y el cliente se cansa antes. Partilo vos.
+        if (text.length() > maxChars) {
+            throw new IllegalArgumentException(
+                    "el documento tiene %d caracteres y el tope es %d: subilo por partes"
+                            .formatted(text.length(), maxChars));
         }
         List<String> pedazos = TextChunker.split(text, chunkSize, chunkOverlap);
         if (pedazos.isEmpty()) {

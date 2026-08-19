@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 
-import { API_BASE, Api } from '../../core/api';
+import { API_BASE, Api, authHeaders } from '../../core/api';
 
 export interface AiStatus {
   configured: boolean;
@@ -62,7 +62,7 @@ export class Ai {
   ): Promise<string> {
     const res = await fetch(`${API_BASE}/ai/chat`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({ conversationId, message }),
     });
     if (!res.ok || !res.body) {

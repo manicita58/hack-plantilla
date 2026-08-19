@@ -55,6 +55,66 @@ devuelven 404. Las migraciones corren igual — por eso el paso 2 existe.
 En el front cada módulo es una ruta con `loadComponent`, o sea un chunk aparte:
 sacarlo también achica lo que se baja el browser.
 
+### Agregar un módulo nuevo
+
+Los tres que vienen son ejemplos de la misma forma. Para el cuarto, copiá la
+estructura de `geo/` (es la más chica) y seguí estos pasos.
+
+**1. El paquete**, en `apps/api/src/main/java/com/hackplantilla/<modulo>/`:
+
+```
+<modulo>/
+  <Modulo>Module.java          la meta-anotación del flag (copiá GeoModule.java)
+  domain/                      records y interfaces. Sin Spring, sin JPA, sin HTTP
+  application/                 @Service con los casos de uso, hablando con los puertos
+  infrastructure/
+    persistence/               el adaptador de datos (JPA o JdbcTemplate)
+    web/                       @RestController y sus DTOs
+```
+
+La meta-anotación son ocho líneas y es lo que hace el módulo apagable:
+
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@ConditionalOnProperty(prefix = "modules.<modulo>", name = "enabled",
+                       havingValue = "true", matchIfMissing = true)
+public @interface <Modulo>Module { }
+```
+
+Después va en cada bean del módulo: `@Service @<Modulo>Module`, `@Repository
+@<Modulo>Module`, `@RestController @<Modulo>Module`.
+
+**2. La migración**: `V6__<modulo>.sql`. Nunca se edita una ya aplicada; siempre
+va una nueva.
+
+**3. La config**, en `application.yml`:
+
+```yaml
+modules:
+  <modulo>:
+    enabled: ${MODULE_<MODULO>:true}
+```
+
+**4. El front**: carpeta en `apps/web/src/app/features/<modulo>/` con su
+`*.service.ts` (que usa `Api` de `core/`) y su página, más la ruta:
+
+```ts
+{ path: '<modulo>', loadComponent: () => import('./features/<modulo>/<modulo>-page')
+                                          .then((m) => m.<Modulo>Page) },
+```
+
+y el link en `app.html`.
+
+**5. Los tests**: uno de dominio sin Spring (rápido, es el que vas a correr todo
+el tiempo) y uno de integración `@SpringBootTest @Transactional` si toca la base.
+
+Checklist de que quedó bien desprendible:
+
+- [ ] Ningún archivo fuera de `<modulo>/` lo importa.
+- [ ] `MODULE_<MODULO>=false` arranca la app y sus endpoints dan 404.
+- [ ] Borrar la carpeta + la migración + la ruta del front deja todo compilando.
+
 ## Estructura
 
 ```
@@ -119,6 +179,33 @@ El front local (`:4200`) le pega a la API en `:8080`; ese origen ya viene en el
 default de `app.cors-origins`, así que funciona sin configurar nada. Después de
 `npm run build` en `apps/web`, Spring también sirve el front compilado desde
 `http://localhost:8080` — mismo origen, sin CORS, útil para demos.
+
+## Proteger lo que cuesta plata
+
+Dos capas, las dos apagadas por defecto para que la demo funcione sin configurar
+nada:
+
+**Token compartido** — con `API_TOKEN` en el `.env`, todo `/ai/**` y las
+escrituras de `/geo` piden el header `X-Api-Token`. El resto (leer el mapa, la
+cadena, `/health`) sigue abierto. En el front se guarda a mano desde la consola:
+
+```js
+localStorage.setItem('apiToken', 'el-token')
+```
+
+No se hardcodea en el bundle: un token que viaja en un front público lo lee
+cualquiera en el devtools. Sirve para que un bot no te encuentre el endpoint y te
+queme los créditos, **no** para autenticar usuarios — para eso hace falta login
+de verdad.
+
+**Rate limit por IP** — las labels de Traefik en `docker-compose.prod.yml` le dan
+a `/ai` un router propio con 20 requests por minuto por IP, en vez de los 50 por
+segundo del resto. Esa es la capa que sí protege contra abuso desde el browser,
+donde no hay secreto posible.
+
+Y un tope de tamaño: `/ai/documents` rechaza textos de más de
+`AI_MAX_DOCUMENT_CHARS` (200k, unas 100 páginas), porque un documento gigante son
+miles de llamadas de embedding en un solo request.
 
 ## La cadena
 

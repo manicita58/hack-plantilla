@@ -47,6 +47,17 @@ services:
       - "traefik.http.routers.hack-api.middlewares=hack-ratelimit,secure-headers@file"
       - "traefik.http.middlewares.hack-ratelimit.ratelimit.average=50"
       - "traefik.http.middlewares.hack-ratelimit.ratelimit.burst=100"
+      # Router aparte solo para /ai, porque cada request de ahí cuesta tokens de
+      # verdad: 20 por minuto y por IP en vez de 50 por segundo. Traefik prioriza
+      # la regla más larga, así que /ai cae acá y el resto en el router de arriba.
+      - "traefik.http.routers.hack-ai.rule=Host(`${API_DOMAIN}`) && PathPrefix(`/ai`)"
+      - "traefik.http.routers.hack-ai.entrypoints=websecure"
+      - "traefik.http.routers.hack-ai.tls.certresolver=le"
+      - "traefik.http.routers.hack-ai.service=hack-api"
+      - "traefik.http.routers.hack-ai.middlewares=hack-ai-ratelimit,secure-headers@file"
+      - "traefik.http.middlewares.hack-ai-ratelimit.ratelimit.average=20"
+      - "traefik.http.middlewares.hack-ai-ratelimit.ratelimit.period=1m"
+      - "traefik.http.middlewares.hack-ai-ratelimit.ratelimit.burst=10"
 
   db:
     # Ver docker/postgres/Dockerfile: Postgres 18 + PostGIS + pgvector.
