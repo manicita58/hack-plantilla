@@ -66,19 +66,60 @@
   li {
     display: flex; justify-content: space-between; align-items: baseline;
     gap: 1rem; padding: .7rem 0; border-top: 1px solid var(--line);
+    flex-wrap: wrap;
   }
   li:first-child { border-top: 0; }
-  li { flex-wrap: wrap; }
-  .hash {
-    flex-basis: 100%; color: var(--muted); font-size: .75rem;
+  /* Chip del bloque: el ícono + el hash cortito. Click -> contrato. */
+  .block {
+    flex-basis: 100%; display: inline-flex; align-items: center; gap: .4rem;
+    margin-top: .15rem; padding: .15rem 0;
+    color: var(--muted); background: none; border: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .75rem;
+  }
+  .block svg { width: 1.05rem; height: 1.05rem; flex: none; color: var(--accent); }
+  .block:hover, .block:focus-visible { color: var(--text); }
+
+  dialog {
+    width: min(30rem, calc(100vw - 2rem)); padding: 1.25rem;
+    color: var(--text); background: var(--card);
+    border: 1px solid var(--line); border-radius: var(--r-card);
+  }
+  dialog::backdrop { background: rgb(0 0 0 / .45); }
+  dialog h2 {
+    display: flex; align-items: center; gap: .5rem;
+    margin: 0 0 1rem; font-size: 1.125rem; letter-spacing: -.01em;
+  }
+  dialog h2 svg { width: 1.25rem; height: 1.25rem; color: var(--accent); }
+  dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .55rem .9rem; }
+  dt { color: var(--muted); font-size: var(--t-small); }
+  dd {
+    margin: 0; font-size: var(--t-small); overflow-wrap: anywhere;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   }
+  dd.ok { color: var(--ok); } dd.bad { color: var(--error); }
+  dialog form[method=dialog] { display: block; margin: 1.25rem 0 0; }
+  dialog form[method=dialog] button { width: 100%; }
+
   time { color: var(--muted); font-size: .8125rem; font-variant-numeric: tabular-nums; }
   .msg { color: var(--muted); font-size: .875rem; padding: .7rem 0; }
   .msg.error { color: var(--error); }
 </style>
 </head>
 <body>
+<!-- Ícono del bloque (lucide `boxes`, ISC). Definido una vez, usado N veces
+     con <use>. La fuente sin tocar está en blockchain.svg. -->
+<svg hidden xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M2.97 12.92A2 2 0 0 0 2 14.63v3.24a2 2 0 0 0 .97 1.71l3 1.8a2 2 0 0 0 2.06 0L12 19v-5.5l-5-3-4.03 2.42Z"/>
+    <path d="m7 16.5-4.74-2.85"/><path d="m7 16.5 5-3"/><path d="M7 16.5v5.17"/>
+    <path d="M12 13.5V19l3.97 2.38a2 2 0 0 0 2.06 0l3-1.8a2 2 0 0 0 .97-1.71v-3.24a2 2 0 0 0-.97-1.71L17 10.5l-5 3Z"/>
+    <path d="m17 16.5-5-3"/><path d="m17 16.5 4.74-2.85"/><path d="M17 16.5v5.17"/>
+    <path d="M7.97 4.42A2 2 0 0 0 7 6.13v4.37l5 3 5-3V6.13a2 2 0 0 0-.97-1.71l-3-1.8a2 2 0 0 0-2.06 0l-3 1.8Z"/>
+    <path d="M12 8 7.26 5.15"/><path d="m12 8 4.74-2.85"/><path d="M12 13.5V8"/>
+  </symbol>
+</svg>
+
 <main>
   <h1>hack-plantilla</h1>
   <p class="sub">Front mínimo consumiendo <code id="api-url"></code></p>
@@ -101,6 +142,20 @@
   </div>
 </main>
 
+<!-- El "contrato" del bloque: qué se firmó y con qué quedó encadenado. -->
+<dialog id="contract">
+  <h2><svg><use href="#i-block"/></svg><span id="c-title">Bloque</span></h2>
+  <dl>
+    <dt>Contenido</dt><dd id="c-name"></dd>
+    <dt>Sellado</dt><dd id="c-date"></dd>
+    <dt>Bloque anterior</dt><dd id="c-prev"></dd>
+    <dt>Hash</dt><dd id="c-hash"></dd>
+    <dt>Fórmula</dt><dd>SHA-256(prev + "|" + contenido + "|" + fecha)</dd>
+    <dt>Estado</dt><dd id="c-state"></dd>
+  </dl>
+  <form method="dialog"><button>Cerrar</button></form>
+</dialog>
+
 <script>
 // Deriva la URL del back del dominio actual: en produccion el front vive en
 // `dominio.com` y el back en `api.dominio.com`. Cambiala a mano si tu setup
@@ -115,6 +170,32 @@ const $form = document.getElementById("form");
 const $name = document.getElementById("name");
 const $verify = document.getElementById("verify");
 const $verifyText = document.getElementById("verify-text");
+const $contract = document.getElementById("contract");
+
+// Último resultado de /chain/verify: el contrato de cada bloque lo usa para
+// decir si está sano o si la cadena se rompió en él o antes.
+let ultimaVerificacion = null;
+
+const abrirContrato = (item) => {
+  const rota = ultimaVerificacion && !ultimaVerificacion.valid;
+  const sospechoso = rota && item.id >= ultimaVerificacion.brokenAt;
+
+  document.getElementById("c-title").textContent = `Bloque #${item.id}`;
+  document.getElementById("c-name").textContent = item.name;
+  document.getElementById("c-date").textContent = item.createdAt;
+  document.getElementById("c-prev").textContent = item.prevHash;
+  document.getElementById("c-hash").textContent = item.hash;
+
+  const $state = document.getElementById("c-state");
+  $state.className = sospechoso || !ultimaVerificacion ? "bad" : "ok";
+  $state.textContent = !ultimaVerificacion
+    ? "sin verificar"
+    : sospechoso
+      ? `cadena rota desde el bloque #${ultimaVerificacion.brokenAt}`
+      : "verificado — el hash cuadra con su contenido";
+
+  $contract.showModal();
+};
 document.getElementById("api-url").textContent = API_BASE;
 
 const show = (text, isError = false) => {
@@ -133,11 +214,16 @@ const render = (items) => {
     when.textContent = new Date(item.createdAt).toLocaleString();
     li.append(name, when);
     if (item.hash) {
-      const hash = document.createElement("code");
-      hash.className = "hash";
-      hash.title = `hash ${item.hash}\nanterior ${item.prevHash}`;
+      const block = document.createElement("button");
+      block.type = "button";
+      block.className = "block";
+      block.title = "Ver el contrato de este bloque";
+      block.innerHTML = '<svg><use href="#i-block"/></svg>';   // markup fijo, no viene del server
+      const hash = document.createElement("span");
       hash.textContent = `#${item.hash.slice(0, 12)}… ← ${item.prevHash.slice(0, 8)}…`;
-      li.append(hash);
+      block.append(hash);
+      block.addEventListener("click", () => abrirContrato(item));
+      li.append(block);
     }
     return li;
   }));
@@ -151,12 +237,14 @@ async function verificar() {
   try {
     const res = await fetch(`${API_BASE}/chain/verify`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const { valid, blocks, brokenAt } = await res.json();
+    ultimaVerificacion = await res.json();
+    const { valid, blocks, brokenAt } = ultimaVerificacion;
     $verify.className = `badge ${valid ? "ok" : "bad"}`;
     $verifyText.textContent = valid
       ? `Cadena verificada · ${blocks} ${blocks === 1 ? "bloque" : "bloques"}`
       : `Cadena adulterada en el bloque #${brokenAt}`;
   } catch (err) {
+    ultimaVerificacion = null;
     $verify.className = "badge bad";
     $verifyText.textContent = `No se pudo verificar (${err.message})`;
   }

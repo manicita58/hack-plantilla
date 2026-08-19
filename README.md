@@ -16,6 +16,7 @@ apps/api/                 backend Spring Boot
     db/migration/         migraciones Flyway (V1__init.sql, V2__…, …)
   Dockerfile              multi-stage: build con JDK, runtime con JRE
 apps/web/index.html       front: un archivo, sin build step ni dependencias
+apps/web/blockchain.svg   ícono del bloque (lucide `boxes`, ISC); va inline en el html
 docker-compose.prod.yml   producción: api + db, SIN proxy (es del server)
 docker-compose.yml        desarrollo local: solo la base
 .github/workflows/        test -> build -> deploy
@@ -50,6 +51,9 @@ Cada item es un bloque: guarda `hash` = SHA-256(`prevHash` + nombre + fecha) y e
 `prevHash` del anterior. Tocar una fila vieja rompe todos los hashes que le siguen,
 y `/chain/verify` devuelve en qué bloque se rompió. El front lo muestra en el
 escudo de verificado, que se recalcula al cargar y al agregar (o al hacerle clic).
+Cada item lleva el ícono del bloque: al clickearlo abre su "contrato" — contenido,
+fecha sellada, hash, hash anterior, la fórmula y si ese bloque quedó dentro de la
+parte rota de la cadena.
 
 Probalo rompiéndola a mano:
 
