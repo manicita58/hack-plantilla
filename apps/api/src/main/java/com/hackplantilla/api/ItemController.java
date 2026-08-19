@@ -18,9 +18,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class ItemController {
 
     private final ItemRepository repository;
+    private final Chain chain;
 
-    public ItemController(ItemRepository repository) {
+    public ItemController(ItemRepository repository, Chain chain) {
         this.repository = repository;
+        this.chain = chain;
     }
 
     @GetMapping
@@ -31,7 +33,8 @@ public class ItemController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Item create(@RequestBody NewItem body) {
-        return repository.save(new Item(body.name()));
+        // No guarda suelto: cada item entra como bloque encadenado al anterior.
+        return chain.append(body.name());
     }
 
     public record NewItem(String name) {

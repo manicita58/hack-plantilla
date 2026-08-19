@@ -9,7 +9,8 @@ el resto, y el test pasa.
 
 ```
 apps/api/                 backend Spring Boot
-  src/main/java/…         Application, Item, ItemRepository, ItemController, CorsConfig
+  src/main/java/…         Application, Item, ItemRepository, ItemController,
+                          Chain (cadena de bloques), ChainController, CorsConfig
   src/main/resources/
     application.yml       config; /health en la raíz, no en /actuator
     db/migration/         migraciones Flyway (V1__init.sql, V2__…, …)
@@ -23,7 +24,8 @@ docker-compose.yml        desarrollo local: solo la base
 | URL | Qué es |
 |---|---|
 | `/health` | estado, lo miran el healthcheck de Docker y Traefik |
-| `/items` | CRUD de ejemplo (GET, POST) |
+| `/items` | CRUD de ejemplo (GET, POST) — cada POST agrega un bloque |
+| `/chain/verify` | recalcula la cadena: `{valid, blocks, brokenAt}` |
 | `/swagger-ui.html` | Swagger UI |
 | `/v3/api-docs` | el OpenAPI en JSON |
 
@@ -38,8 +40,28 @@ cd apps/api && mvn spring-boot:run
 curl localhost:8080/health
 curl -X POST localhost:8080/items -H 'Content-Type: application/json' -d '{"name":"hola"}'
 curl localhost:8080/items
+curl localhost:8080/chain/verify
 xdg-open http://localhost:8080/swagger-ui.html
 ```
+
+## La cadena
+
+Cada item es un bloque: guarda `hash` = SHA-256(`prevHash` + nombre + fecha) y el
+`prevHash` del anterior. Tocar una fila vieja rompe todos los hashes que le siguen,
+y `/chain/verify` devuelve en qué bloque se rompió. El front lo muestra en el
+escudo de verificado, que se recalcula al cargar y al agregar (o al hacerle clic).
+
+Probalo rompiéndola a mano:
+
+```bash
+docker compose exec db psql -U hack -d hack -c \
+  "UPDATE items SET name='adulterado' WHERE id=1"
+curl localhost:8080/chain/verify   # -> {"valid":false,"blocks":N,"brokenAt":1}
+```
+
+No hay red, ni consenso, ni wallets: es un ledger a prueba de manipulación dentro
+de tu propio Postgres. Las filas creadas antes de la migración `V2` no son bloques
+y la verificación las ignora.
 
 Y el front, en otra terminal:
 
@@ -167,6 +189,107 @@ la "CI del front": Cloudflare la maneja, no hace falta workflow.
 > ejemplo), agregás un servicio `web` al compose con su propio router. Está
 > documentado en `/opt/edge/NUEVO-PROYECTO.md`. Perdés el CDN y sumás RAM.
 
+## Cambiar de dominio
+
+El dominio vive en **tres lugares**, ninguno de ellos el código del front. Reemplazá
+`nuevo.com` por el que va.
+
+### 1. Zona en Cloudflare
+
+**Add site** `nuevo.com` → apuntá los nameservers en tu registrador → esperá a que la
+zona quede `Active`. Si el dominio ya estaba en Cloudflare, este paso no existe.
+
+### 2. DNS: solo el record de la API
+
+| Name | Type | Content | Proxy |
+|---|---|---|---|
+| `api` | A | IP del VPS | **DNS only** (gris) |
+
+Gris, no naranja. En naranja Cloudflare intercepta el 443, Let's Encrypt nunca valida
+y Traefik sirve `TRAEFIK DEFAULT CERT` para siempre.
+
+Los records de `nuevo.com` y `www.nuevo.com` **no se crean acá**: los hace Pages en el
+paso 4.
+
+### 3. VPS: `.env` y recrear el contenedor
+
+```bash
+cd /opt/hack
+sd 'API_DOMAIN=.*'   'API_DOMAIN=api.nuevo.com' .env
+sd 'CORS_ORIGINS=.*' 'CORS_ORIGINS=https://nuevo.com,https://www.nuevo.com' .env
+
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps api
+docker compose -f docker-compose.prod.yml logs -f api
+```
+
+`--force-recreate` **no es opcional**: las labels de Traefik se resuelven desde
+`${API_DOMAIN}` en el momento de crear el contenedor. Un `restart` conserva las viejas
+y el router sigue publicando el dominio anterior, sin dar ningún error.
+
+Corré esto **después** de que `api.nuevo.com` resuelva. Al revés, Traefik pide el
+certificado antes de que exista el DNS, Let's Encrypt falla y gastás reintentos del
+rate limit (5 fallos por hora por dominio).
+
+### 4. Cloudflare Pages
+
+**Workers & Pages → el proyecto → Custom domains**: agregá `nuevo.com` y
+`www.nuevo.com`, y borrá los viejos con el `...`. Cloudflare crea y elimina los
+records DNS solo.
+
+### 5. El front: nada
+
+`apps/web/index.html` arma la URL del back con `https://api.` + el hostname sin `www.`.
+Mientras mantengas la convención `api.<dominio>`, se adapta solo. Si la rompés, ahí sí
+editás el `API_BASE` al principio del `<script>`.
+
+### Verificar
+
+```bash
+dig @1.1.1.1 +short api.nuevo.com nuevo.com
+curl -sI https://api.nuevo.com/health                  # 200
+curl -sI https://nuevo.com                             # 200
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H 'Origin: https://nuevo.com' https://api.nuevo.com/items   # 200, no 403
+```
+
+El último es el que más se olvida. Si da `403`, quedó mal `CORS_ORIGINS` — y en el
+browser eso se ve como "el front no carga nada", sin ningún error que lo diga.
+
+## Diagnosticar un deploy que "no anda"
+
+En orden, de afuera hacia adentro. El primero que falle es la causa.
+
+```bash
+# 1. ¿Existe el nombre? Consultá al nameserver autoritativo, no a tu resolver.
+dig @jack.ns.cloudflare.com +short api.tudominio.com
+
+# 2. ¿Responde y con qué certificado?
+curl -sI https://api.tudominio.com/health
+echo | openssl s_client -connect api.tudominio.com:443 \
+  -servername api.tudominio.com 2>/dev/null | openssl x509 -noout -subject -issuer -dates
+
+# 3. En el VPS: ¿los contenedores están arriba y sanos?
+cd /opt/hack
+docker compose -f docker-compose.prod.yml ps          # ojo con `Restarting (1)`
+docker compose -f docker-compose.prod.yml logs --tail=50 api
+
+# 4. ¿Existe la red del proxy compartido?
+docker network ls | rg edge
+
+# 5. ¿El .env tiene todo?
+rg -N 'API_DOMAIN|GHCR_REPO|PGDATA_DIR|CORS_ORIGINS' .env
+```
+
+| Síntoma | Causa casi siempre |
+|---|---|
+| `DNS_PROBE_POSSIBLE` en el browser | el record no existe; mirá si le pusiste `www` o no |
+| `TRAEFIK DEFAULT CERT` | el record de `api` quedó **naranja**; ponelo gris |
+| 522 en el dominio del front | el dominio tiene DNS pero no está dado de alta en Pages |
+| `Restarting (1)` en `db` | mount de Postgres 18 en `.../data` en vez de `/var/lib/postgresql` |
+| `Schema validation: missing table` | falta `spring-boot-starter-flyway`; Flyway no corrió |
+| el front no carga datos pero `curl` a la API anda | `CORS_ORIGINS` no lista el dominio del front |
+| pull falla con `denied` | el token de GHCR es fine-grained; tiene que ser **classic** |
+
 ## Detalles que no son obvios
 
 **`spring-boot-starter-flyway`, no `flyway-core`.** En Spring Boot 4 las
@@ -209,3 +332,26 @@ el `up -d` **no da error**: solo lo ves como `Restarting (1)` en `docker ps`.
 antes de que el JS la vea, y el error que reporta (`TypeError: Failed to fetch`)
 no dice nada útil. Si el front no carga datos pero `curl` a la API anda, mirá
 `CORS_ORIGINS`.
+
+**Un deploy en verde no significa desplegado.** El job `deploy` corre
+`up -d --force-recreate --no-deps api`. `--no-deps` hace que toque **solo** `api`: no
+levanta `db`, no evalúa el `depends_on: service_healthy` y no espera al healthcheck.
+Si la base nunca se levantó a mano, la API entra en crash-loop y **el workflow sale
+igual en verde**. Verde quiere decir "la imagen se publicó y el contenedor se
+recreó", nada más. Lo desplegado se comprueba con `curl` al `/health` público.
+
+**Los custom domains de Pages se dan de alta en Pages, no en DNS.** Crear el record a
+mano en la pantalla de DNS no alcanza: sin el dominio registrado en el proyecto,
+Cloudflare no le emite certificado ni sabe a qué proyecto rutearlo, y devuelve 522.
+Se hace al revés — lo agregás en **Custom domains** y Cloudflare crea el record solo.
+
+**El dominio raíz del front va como CNAME, no como A.** Pages no te da una IP fija, así
+que el apex apunta por CNAME a `<proyecto>.pages.dev` (Cloudflare lo aplana solo, que
+es lo que hace legal un CNAME en el apex). Y va **proxied (naranja)**, al revés que
+`api`, que necesita quedar gris para Let's Encrypt.
+
+**Un `NXDOMAIN` te queda cacheado 30 minutos.** El SOA de la zona declara un TTL
+negativo de 1800s: si consultaste un nombre *antes* de crear el record, tu resolver
+recuerda que no existía durante media hora, aunque ya esté publicado. Para ver la
+verdad al instante, preguntale al nameserver autoritativo:
+`dig @jack.ns.cloudflare.com +short www.tudominio.com`.
