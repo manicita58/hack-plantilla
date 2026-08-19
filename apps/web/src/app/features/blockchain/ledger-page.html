@@ -1,0 +1,67 @@
+<h1>Cadena de bloques</h1>
+<p class="sub">
+  Cada entrada se sella con el hash de la anterior. Tocar una fila vieja por fuera
+  de la API rompe todos los hashes siguientes y la verificación lo canta.
+</p>
+
+<div class="card">
+  <form class="row" (submit)="agregar($event)">
+    <input class="grow" [(ngModel)]="texto" name="contenido" placeholder="Contenido del bloque"
+           required maxlength="500" autocomplete="off">
+    <button type="submit" [disabled]="guardando()">Sellar bloque</button>
+  </form>
+
+  <p class="row" style="margin: 1rem 0 0">
+    <button type="button" class="badge" [class.ok]="estado() === 'ok'"
+            [class.bad]="estado() === 'bad'" [class.check]="estado() === 'check'"
+            (click)="verificar()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2 4 5.5v6c0 4.6 3.2 8.8 8 10.5 4.8-1.7 8-5.9 8-10.5v-6L12 2Z"/>
+        <path d="m9 12 2 2 4-4"/>
+      </svg>
+      {{ etiquetaVerificacion() }}
+    </button>
+  </p>
+</div>
+
+<div class="card">
+  @if (error(); as mensaje) {
+    <p class="notice bad">{{ mensaje }}</p>
+  }
+
+  <ul class="plain">
+    @for (bloque of bloques(); track bloque.id) {
+      <li>
+        <div class="row" style="justify-content: space-between; align-items: baseline">
+          <span>{{ bloque.content }}</span>
+          <time class="muted small" [dateTime]="bloque.createdAt">{{ bloque.createdAt | date: 'short' }}</time>
+        </div>
+        <button type="button" class="link mono small" (click)="abrirContrato(bloque)"
+                title="Ver el contrato de este bloque">
+          #{{ bloque.hash.slice(0, 12) }}… ← {{ bloque.prevHash.slice(0, 8) }}…
+        </button>
+      </li>
+    } @empty {
+      <li class="empty">Todavía no hay bloques. Sellá el primero.</li>
+    }
+  </ul>
+</div>
+
+<dialog #contrato>
+  @if (seleccionado(); as bloque) {
+    <h2>Bloque #{{ bloque.id }}</h2>
+    <dl>
+      <dt>Contenido</dt><dd>{{ bloque.content }}</dd>
+      <dt>Sellado</dt><dd>{{ bloque.createdAt }}</dd>
+      <dt>Bloque anterior</dt><dd>{{ bloque.prevHash }}</dd>
+      <dt>Hash</dt><dd>{{ bloque.hash }}</dd>
+      <dt>Fórmula</dt><dd>SHA-256(prev + "|" + contenido + "|" + fecha)</dd>
+      <dt>Estado</dt>
+      <dd [class.ok]="!sospechoso(bloque)" [class.bad]="sospechoso(bloque)">{{ estadoDelBloque(bloque) }}</dd>
+    </dl>
+  }
+  <form method="dialog" style="margin-top: 1.25rem">
+    <button style="width: 100%">Cerrar</button>
+  </form>
+</dialog>

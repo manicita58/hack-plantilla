@@ -6,6 +6,7 @@ on:
     # Sin este filtro, cada cambio de README dispara un deploy.
     paths:
       - 'apps/api/**'
+      - 'docker/**'
       - '.github/workflows/deploy.yml'
       - 'docker-compose.prod.yml'
   # Disparo manual: re-desplegar sin inventar un commit, y comprobar que los
@@ -22,21 +23,19 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      db:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: hack
-          POSTGRES_PASSWORD: hack
-          POSTGRES_DB: hack
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v4
+
+      # No va como `services:` porque la imagen hay que construirla (PostGIS +
+      # pgvector) y los service containers solo aceptan imágenes ya publicadas.
+      - name: Postgres con PostGIS + pgvector
+        run: |
+          docker build -t hack-postgres:18 docker/postgres
+          docker run -d --name hackdb -p 5432:5432 \
+            -e POSTGRES_USER=hack -e POSTGRES_PASSWORD=hack -e POSTGRES_DB=hack \
+            --health-cmd "pg_isready -U hack -d hack" --health-interval 2s --health-retries 30 \
+            hack-postgres:18
+          until [ "$(docker inspect -f '{{.State.Health.Status}}' hackdb)" = healthy ]; do sleep 2; done
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

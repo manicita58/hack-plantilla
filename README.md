@@ -1,27 +1,74 @@
 # hack-plantilla
 
-Plantilla de proyecto para el VPS: **Spring Boot 4.1 + Java 25 + PostgreSQL 18**
-+ front estático, lista para desplegar detrás del Traefik compartido de `/opt/edge`.
+Plantilla para hackatones: **Spring Boot 4.1 + Java 25 + PostgreSQL 18 + Angular 21**,
+lista para desplegar detrás del Traefik compartido de `/opt/edge`.
 
-Verificada de punta a punta: compila, Flyway migra, JPA valida el esquema, el CRUD
-escribe y lee, Swagger responde, CORS deja pasar los orígenes permitidos y bloquea
-el resto, y el test pasa.
+Trae tres módulos armados y verificados. Cada uno se prende o apaga por variable
+de entorno, y se arranca sin él borrando una carpeta.
 
-Trae de ejemplo una **cadena de bloques sobre la tabla `items`**: cada item se
-sella con el hash del anterior, `/chain/verify` recalcula la cadena entera y el
-front lo muestra en un escudo de verificado (ver [La cadena](#la-cadena)).
+| Módulo | Qué trae | Endpoints | Apagar con |
+|---|---|---|---|
+| **Cadena de bloques** | Ledger encadenado por hash: cada entrada sella la anterior y `verify` detecta cualquier manipulación | `/ledger`, `/ledger/verify` | `MODULE_BLOCKCHAIN=false` |
+| **IA** | Chat con streaming token a token e historial, más RAG (ingesta, embeddings y búsqueda semántica en pgvector) contra DeepInfra | `/ai/chat`, `/ai/ask`, `/ai/documents`, `/ai/status` | `MODULE_AI=false` |
+| **Geovisor** | Mapa Leaflet sobre PostGIS: consulta por bbox, búsqueda por cercanía en metros y GeoJSON de ida y de vuelta | `/geo/features`, `/geo/features/near`, `/geo/stats` | `MODULE_GEO=false` |
+
+Y lo de siempre: `/health`, Swagger en `/swagger-ui.html`, OpenAPI en `/v3/api-docs`,
+migraciones Flyway, CORS por `.env` y CI/CD a GitHub Actions.
+
+## Arquitectura
+
+Un paquete por módulo, y adentro de cada uno un hexágono:
+
+```
+com.hackplantilla
+├── shared/                  CORS y formato de errores; lo único transversal
+├── blockchain/
+│   ├── domain/              Block, ChainHasher, ChainVerifier, BlockRepository (puerto)
+│   ├── application/         LedgerService — los casos de uso
+│   └── infrastructure/      JPA (persistence) y REST (web) — los adaptadores
+├── ai/                      misma forma: ChatModel/EmbeddingModel/ChunkStore son puertos,
+│                            DeepInfra y pgvector son adaptadores
+└── geo/                     misma forma: FeatureRepository es puerto, PostGIS es adaptador
+```
+
+Tres consecuencias prácticas:
+
+- **El dominio no sabe de Spring.** `ChainVerifierTest` y `TextChunkerTest` corren
+  sin contexto, sin base y sin red, en milisegundos.
+- **Cambiar de proveedor es cambiar un adaptador.** DeepInfra habla el protocolo
+  de OpenAI: apuntando `DEEPINFRA_BASE_URL` a OpenRouter, Together, vLLM o un
+  Ollama local, no se toca una línea de `application/` ni de `domain/`.
+- **Los módulos no se conocen entre sí.** Nada fuera de `ai/` importa `ai/`.
+
+### Desprender un módulo
+
+Tres pasos, sin tocar nada más:
+
+1. Borrá el paquete (`apps/api/src/main/java/com/hackplantilla/<modulo>/`) y su test.
+2. Borrá su migración (`V4__ai.sql` o `V5__geo.sql`).
+3. Borrá su carpeta en `apps/web/src/app/features/` y su ruta en `app.routes.ts`.
+
+Si solo lo querés apagado (para una demo, o porque no tenés la API key), alcanza
+con `MODULE_AI=false` en el `.env`: los beans no se registran y los endpoints
+devuelven 404. Las migraciones corren igual — por eso el paso 2 existe.
+
+En el front cada módulo es una ruta con `loadComponent`, o sea un chunk aparte:
+sacarlo también achica lo que se baja el browser.
+
+## Estructura
 
 ```
 apps/api/                 backend Spring Boot
-  src/main/java/…         Application, Item, ItemRepository, ItemController,
-                          Chain (cadena de bloques), ChainController, CorsConfig
+  src/main/java/…         shared/ + blockchain/ + ai/ + geo/ (ver Arquitectura)
   src/main/resources/
-    application.yml       config; /health en la raíz, no en /actuator
-    db/migration/         migraciones Flyway (V1__init.sql, V2__…, …)
+    application.yml       config, flags de módulos y parámetros de IA
+    db/migration/         V1..V5 — Flyway las corre al arrancar
   Dockerfile              multi-stage: build con JDK, runtime con JRE
-apps/web/index.html       front: un archivo, sin build step ni dependencias
-apps/web/blockchain.svg   ícono del bloque (lucide `boxes`, ISC); va inline en el html
-Makefile                  atajos de desarrollo: make dev / seed / break / test
+apps/web/                 front Angular 21 (standalone, signals, zoneless)
+  src/app/core/           cliente HTTP y URL de la API
+  src/app/features/       un módulo = una carpeta = una ruta lazy
+docker/postgres/          Postgres 18 + PostGIS + pgvector (no hay imagen oficial con ambas)
+Makefile                  atajos: make dev / web / seed / break / ai / geo
 docker-compose.prod.yml   producción: api + db, SIN proxy (es del server)
 docker-compose.yml        desarrollo local: solo la base
 .github/workflows/        test -> build -> deploy
@@ -30,48 +77,56 @@ docker-compose.yml        desarrollo local: solo la base
 | URL | Qué es |
 |---|---|
 | `/health` | estado, lo miran el healthcheck de Docker y Traefik |
-| `/items` | CRUD de ejemplo (GET, POST) — cada POST agrega un bloque |
-| `/chain/verify` | recalcula la cadena: `{valid, blocks, brokenAt}` |
+| `/ledger` | la cadena (GET) y sellar un bloque (POST) |
+| `/ledger/verify` | recalcula la cadena: `{valid, blocks, brokenAt}` |
+| `/ai/status` | si el módulo está configurado, qué modelo usa y qué documentos hay |
+| `/ai/chat` | chat con streaming (SSE), POST con `{conversationId?, message}` |
+| `/ai/documents` | indexar (POST), listar (GET) y borrar (DELETE) documentos del RAG |
+| `/ai/ask` | pregunta contra los documentos indexados, con las fuentes que usó |
+| `/geo/features` | GeoJSON filtrado por `bbox` y `category` |
+| `/geo/features/near` | lo que está a `meters` de `lon`/`lat`, ordenado por distancia |
+| `/geo/stats` | conteo de features por categoría |
 | `/swagger-ui.html` | Swagger UI |
 | `/v3/api-docs` | el OpenAPI en JSON |
 
 ## Desarrollo local
 
-Necesitás Java 25, Docker y Maven (`sudo dnf install maven`). Después:
+Necesitás Java 25, Docker, Maven (`sudo dnf install maven`) y Node 20.19+/22.12+.
 
 ```bash
 make            # lista los atajos
-make dev        # base + API + front, todo junto en http://localhost:8080
+make dev        # base + API en http://localhost:8080
+make web        # front Angular en http://localhost:4200 (otra terminal)
 ```
 
-`make dev` espera a que Postgres acepte conexiones (healthcheck + `--wait`) y
-recién ahí arranca Spring. El front se sirve desde el mismo Spring leyendo
-`apps/web/` del disco, así que **en local no hay CORS**: mismo origen, y los
-cambios al HTML se ven recargando el browser, sin reiniciar nada.
+`make dev` levanta el Postgres del proyecto (con PostGIS y pgvector), espera a
+que acepte conexiones y recién ahí arranca Spring. `make web` instala las
+dependencias la primera vez y deja `ng serve` con recarga en caliente.
 
 | Atajo | Qué hace |
 |---|---|
-| `make dev` | lo de arriba, en una sola terminal |
-| `make seed` | mete tres bloques por la API |
-| `make verify` | imprime el estado de la cadena |
+| `make dev` | base + API |
+| `make web` | front Angular con hot reload |
+| `make seed` | sella tres bloques de ejemplo |
+| `make verify` | estado de la cadena |
 | `make break` | adultera el bloque 1 con SQL: la cadena tiene que romperse |
-| `make test` | los tests (levanta la base si hace falta) |
-| `make front` | sirve el front aparte en `127.0.0.1:5500`, para probar el CORS real |
+| `make ai` | estado del módulo de IA (modelo, key, documentos) |
+| `make geo` | features cargadas, por categoría |
+| `make test` | tests del back |
 | `make reset` | borra base y volumen, se arranca de cero |
 
-Con devtools, recompilar (el IDE al guardar, o `mvn compile` en otra terminal)
-reinicia la app en ~1s en vez de los ~10s del arranque completo. Devtools es
-`optional`: no entra al jar de producción.
-
-Swagger para pegarle a los endpoints sin curl: `http://localhost:8080/swagger-ui.html`.
+El front local (`:4200`) le pega a la API en `:8080`; ese origen ya viene en el
+default de `app.cors-origins`, así que funciona sin configurar nada. Después de
+`npm run build` en `apps/web`, Spring también sirve el front compilado desde
+`http://localhost:8080` — mismo origen, sin CORS, útil para demos.
 
 ## La cadena
 
 Cada item es un bloque: guarda `hash` = SHA-256(`prevHash` + nombre + fecha) y el
 `prevHash` del anterior. Tocar una fila vieja rompe todos los hashes que le siguen,
-y `/chain/verify` devuelve en qué bloque se rompió. El front lo muestra en el
+y `/ledger/verify` devuelve en qué bloque se rompió. El front lo muestra en el
 escudo de verificado, que se recalcula al cargar y al agregar (o al hacerle clic).
-Cada item lleva el ícono del bloque: al clickearlo abre su "contrato" — contenido,
+Cada bloque lleva su ícono: al clickearlo abre su "contrato" — contenido,
 fecha sellada, hash, hash anterior, la fórmula y si ese bloque quedó dentro de la
 parte rota de la cadena.
 
@@ -91,7 +146,57 @@ y la verificación las ignora.
 
 En producción el front vive en otro dominio (`tudominio.com`) y le pega a
 `api.tudominio.com`: ahí sí hay CORS, y ese origen tiene que estar en
-`CORS_ORIGINS`. Con `make front` reproducís ese escenario en local.
+`CORS_ORIGINS`. En local no hay CORS: `ng serve` y la API comparten `localhost`
+y ese origen ya viene permitido por default.
+
+## El módulo de IA
+
+Dos cosas distintas detrás del mismo proveedor:
+
+**Chat** (`/ai/chat`) — streaming token a token por SSE, con historial guardado
+en Postgres. El front pinta la respuesta mientras se genera, que es la diferencia
+entre una demo que parece viva y una que parece colgada. El historial se recorta
+a los últimos `AI_HISTORY_TURNS` turnos: más contexto es más tokens, más plata y
+más latencia.
+
+**RAG** (`/ai/documents` + `/ai/ask`) — el documento se parte en pedazos con
+solape, cada pedazo se vectoriza y se guarda en pgvector, y al preguntar el back
+busca los más parecidos por distancia coseno y se los pasa al modelo como
+contexto. La respuesta viene con las fuentes y su similitud, así se ve de dónde
+salió cada cosa en vez de confiar y rezar.
+
+```bash
+cp env.example .env       # y poné DEEPINFRA_API_KEY
+make ai                   # {"configured":true,"chatModel":"…","documents":[]}
+```
+
+Sin la key el módulo responde 503 con el mensaje de qué falta, no un stacktrace.
+
+El proveedor es **DeepInfra** por defecto, pero el adaptador habla el protocolo
+de OpenAI: cambiando `DEEPINFRA_BASE_URL` sirve para OpenRouter, Together, vLLM
+o un Ollama local. Cambiar de modelo es una variable de entorno
+(`AI_CHAT_MODEL`). **Ojo con los embeddings**: `VECTOR(1024)` en `V4__ai.sql`
+tiene que coincidir con la dimensión de `AI_EMBEDDING_MODEL`; si cambiás a un
+modelo de otra dimensión, hace falta una migración nueva.
+
+## El geovisor
+
+Leaflet sobre OpenStreetMap (sin API key de nadie) y PostGIS del lado del back.
+
+- `GET /geo/features?bbox=minLon,minLat,maxLon,maxLat` — el mapa pide solo lo que
+  entra en pantalla. El `bbox` sale de `map.getBounds().toBBoxString()` de Leaflet
+  y se filtra con `ST_Intersects` sobre el índice GIST, no en la app.
+- `GET /geo/features/near?lon=&lat=&meters=` — distancia real en metros
+  (`::geography`, no grados), ordenado de más cerca a más lejos.
+- `POST /geo/features` — recibe GeoJSON y lo guarda con `ST_GeomFromGeoJSON`.
+
+La columna es `geometry(Geometry, 4326)`, o sea la misma tabla guarda puntos,
+líneas y polígonos. Los datos de ejemplo son cuatro features de Bogotá; se van
+con `DELETE FROM geo_features WHERE category = 'demo'`.
+
+En el front el mapa recarga la capa en cada `moveend`, y los puntos son
+`circleMarker` en vez de `marker`: el ícono por defecto de Leaflet apunta a PNGs
+por ruta relativa y se rompe al empaquetar.
 
 ## Desplegarlo — paso a paso
 
@@ -171,9 +276,15 @@ El primer push a `main` construye y publica la imagen. Después, en el VPS:
 
 ```bash
 cd /opt/hack
+docker compose -f docker-compose.prod.yml up -d --build db   # construye Postgres+PostGIS+pgvector
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml ps
 ```
+
+> `--build db` solo hace falta la primera vez (y cuando cambie
+> `docker/postgres/Dockerfile`). Si el proyecto ya venía corriendo con
+> `postgres:18-alpine`, la base se reinicializa: alpine usa musl y esta imagen
+> glibc, así que **hacé `pg_dump` antes** si los datos te importan.
 
 No hay paso de migraciones: **Flyway corre solo al arrancar la app**.
 
@@ -181,7 +292,8 @@ No hay paso de migraciones: **Flyway corre solo al arrancar la app**.
 
 ```bash
 curl -sI https://api.tudominio.com/health      # 200 — dale ~60s al certificado
-curl -X POST https://api.tudominio.com/items -H 'Content-Type: application/json' -d '{"name":"ok"}'
+curl -X POST https://api.tudominio.com/ledger -H 'Content-Type: application/json' -d '{"content":"ok"}'
+curl https://api.tudominio.com/ledger/verify
 ```
 
 Y abrí `https://api.tudominio.com/swagger-ui.html` en el browser.
@@ -194,13 +306,16 @@ El front **no va al VPS**: es estático, lo sirve Cloudflare gratis desde su CDN
 
 1. Cloudflare → **Workers & Pages** → **Create** → **Pages** → conectá el repo.
 2. **Root directory:** `apps/web`
-3. **Build command:** vacío — no hay build, es un `index.html`.
-4. **Output directory:** `.` (el mismo `apps/web`)
+3. **Build command:** `npm ci && npm run build`
+4. **Output directory:** `dist/web/browser`
 5. **Custom domain:** `tudominio.com` (y `www`), que quedan **proxied (naranja)**.
 
+> Si venías del front estático de una versión anterior de la plantilla, tenés que
+> actualizar los pasos 3 y 4 a mano en el proyecto de Pages: Angular sí necesita build.
+
 El front deduce la URL del back del dominio: si está en `tudominio.com`, pega a
-`https://api.tudominio.com`. Si tu setup no sigue esa convención, cambiá el
-`API_BASE` que está al principio del `<script>`.
+`https://api.tudominio.com`. Si tu setup no sigue esa convención, cambiá
+`API_BASE` en `apps/web/src/app/core/api.ts`.
 
 Cada push a `main` redespliega el front solo, sin tocar nada del VPS. Esa es toda
 la "CI del front": Cloudflare la maneja, no hace falta workflow.
@@ -258,9 +373,9 @@ records DNS solo.
 
 ### 5. El front: nada
 
-`apps/web/index.html` arma la URL del back con `https://api.` + el hostname sin `www.`.
-Mientras mantengas la convención `api.<dominio>`, se adapta solo. Si la rompés, ahí sí
-editás el `API_BASE` al principio del `<script>`.
+`apps/web/src/app/core/api.ts` arma la URL del back con `https://api.` + el hostname
+sin `www.`. Mientras mantengas la convención `api.<dominio>`, se adapta solo. Si la
+rompés, ahí sí editás `API_BASE`.
 
 ### Verificar
 
@@ -269,7 +384,7 @@ dig @1.1.1.1 +short api.nuevo.com nuevo.com
 curl -sI https://api.nuevo.com/health                  # 200
 curl -sI https://nuevo.com                             # 200
 curl -s -o /dev/null -w '%{http_code}\n' \
-  -H 'Origin: https://nuevo.com' https://api.nuevo.com/items   # 200, no 403
+  -H 'Origin: https://nuevo.com' https://api.nuevo.com/ledger   # 200, no 403
 ```
 
 El último es el que más se olvida. Si da `403`, quedó mal `CORS_ORIGINS` — y en el

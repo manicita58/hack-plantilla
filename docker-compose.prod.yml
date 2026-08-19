@@ -49,7 +49,14 @@ services:
       - "traefik.http.middlewares.hack-ratelimit.ratelimit.burst=100"
 
   db:
-    image: postgres:18-alpine
+    # Ver docker/postgres/Dockerfile: Postgres 18 + PostGIS + pgvector.
+    # Se construye en el server la primera vez:
+    #   docker compose -f docker-compose.prod.yml up -d --build db
+    # OJO al migrar desde postgres:18-alpine: alpine usa musl y esta imagen
+    # glibc, así que el orden de colación cambia. Con datos que te importen:
+    # pg_dump antes, restore después (o REINDEX de los índices de texto).
+    build: ./docker/postgres
+    image: hack-postgres:18
     restart: unless-stopped
     logging: *default-logging
     environment:

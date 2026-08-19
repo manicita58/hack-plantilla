@@ -1,0 +1,41 @@
+<h1>Chat con IA</h1>
+<p class="sub">
+  Streaming token a token contra DeepInfra, con historial guardado en Postgres.
+  El modelo se cambia por variable de entorno, sin tocar código.
+</p>
+
+@if (estado(); as info) {
+  @if (!info.configured) {
+    <p class="notice bad">
+      Falta <code>DEEPINFRA_API_KEY</code> en el <code>.env</code> del back.
+      Sacá una en <a href="https://deepinfra.com/dash/api_keys" target="_blank" rel="noreferrer">deepinfra.com</a>
+      y reiniciá la API.
+    </p>
+  } @else {
+    <p class="notice">Modelo: <span class="mono">{{ info.chatModel }}</span></p>
+  }
+}
+
+<div class="card">
+  <ul class="plain">
+    @for (mensaje of mensajes(); track $index) {
+      <li>
+        <p class="small muted" style="margin: 0 0 .25rem">{{ mensaje.role === 'user' ? 'Vos' : 'IA' }}</p>
+        <p style="margin: 0; white-space: pre-wrap">{{ mensaje.content }}</p>
+      </li>
+    } @empty {
+      <li class="empty">Preguntale algo. La conversación se guarda y el modelo la recuerda.</li>
+    }
+  </ul>
+
+  @if (error(); as mensaje) {
+    <p class="notice bad" style="margin-top: 1rem">{{ mensaje }}</p>
+  }
+
+  <form class="row" style="margin-top: 1rem" (submit)="enviar($event)">
+    <input class="grow" [(ngModel)]="texto" name="mensaje" placeholder="Escribí tu mensaje"
+           autocomplete="off" [disabled]="enviando()">
+    <button type="submit" [disabled]="enviando()">{{ enviando() ? 'Pensando…' : 'Enviar' }}</button>
+    <button type="button" class="ghost" (click)="nueva()" [disabled]="enviando()">Nueva</button>
+  </form>
+</div>

@@ -22,16 +22,17 @@ spring:
     resources:
       # Los 4 primeros son el default de Boot (los repito porque esta clave los
       # reemplaza, y sin `classpath:/META-INF/resources/` se cae Swagger UI).
-      # El último sirve apps/web desde el disco al correr `mvn spring-boot:run`
-      # en apps/api: el front queda en http://localhost:8080 junto a la API, o
-      # sea mismo origen y CERO problemas de CORS mientras desarrollás.
+      # El último sirve el build de Angular desde el disco: después de
+      # `npm run build` en apps/web, el front queda en http://localhost:8080
+      # junto a la API (mismo origen, sin CORS). Para desarrollar en caliente
+      # se usa `ng serve` en :4200, que proxea /api al back (proxy.conf.json).
       # En el contenedor esa ruta no existe y Spring la ignora.
       static-locations:
         - classpath:/META-INF/resources/
         - classpath:/resources/
         - classpath:/static/
         - classpath:/public/
-        - file:../../apps/web/
+        - file:../../apps/web/dist/web/browser/
 
 server:
   port: 8080
@@ -43,8 +44,45 @@ server:
 
 app:
   # Orígenes que pueden llamar a la API desde el browser. Coma como separador.
-  # El default cubre el `index.html` abierto local y los dev servers típicos.
-  cors-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500}
+  # El default cubre `ng serve` (4200) y los dev servers típicos.
+  cors-origins: ${CORS_ORIGINS:http://localhost:4200,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500}
+
+# ─── Módulos ────────────────────────────────────────────────────────────────
+# Cada uno se apaga entero (beans y endpoints) sin tocar código. Las migraciones
+# Flyway corren igual: para sacar un módulo de raíz, borrá su paquete y su .sql.
+modules:
+  blockchain:
+    enabled: ${MODULE_BLOCKCHAIN:true}
+  ai:
+    enabled: ${MODULE_AI:true}
+  geo:
+    enabled: ${MODULE_GEO:true}
+
+# ─── Módulo IA ──────────────────────────────────────────────────────────────
+ai:
+  # Se le manda en cada request. Cambialo por el tono de tu demo.
+  system-prompt: ${AI_SYSTEM_PROMPT:Sos un asistente conciso y directo. Respondés en el idioma en que te preguntan.}
+  # Turnos de ida y vuelta que se le reenvían al modelo. Más historial = más
+  # contexto, más tokens y más latencia.
+  history-turns: ${AI_HISTORY_TURNS:8}
+
+  deepinfra:
+    # https://deepinfra.com/dash/api_keys — sin esto el módulo responde 503.
+    api-key: ${DEEPINFRA_API_KEY:}
+    # La API es compatible con OpenAI: cambiando esta URL el mismo adaptador
+    # sirve para OpenRouter, Together, vLLM o un Ollama local.
+    base-url: ${DEEPINFRA_BASE_URL:https://api.deepinfra.com/v1/openai}
+    chat-model: ${AI_CHAT_MODEL:meta-llama/Llama-3.3-70B-Instruct}
+    # 1024 dimensiones: tiene que coincidir con VECTOR(1024) de V4__ai.sql.
+    embedding-model: ${AI_EMBEDDING_MODEL:BAAI/bge-m3}
+    max-tokens: ${AI_MAX_TOKENS:800}
+    temperature: ${AI_TEMPERATURE:0.3}
+
+  rag:
+    chunk-size: ${AI_CHUNK_SIZE:900}
+    # Solape para que una idea partida al medio quede entera en algún chunk.
+    chunk-overlap: ${AI_CHUNK_OVERLAP:150}
+    top-k: ${AI_TOP_K:4}
 
 springdoc:
   swagger-ui:

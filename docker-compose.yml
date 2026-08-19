@@ -4,7 +4,11 @@
 #   make dev      (o: docker compose up -d --wait && cd apps/api && mvn spring-boot:run)
 services:
   db:
-    image: postgres:18-alpine
+    # Imagen propia: Postgres 18 + PostGIS (módulo geo) + pgvector (módulo ia).
+    # No existe oficial con las dos. `image:` le pone nombre al build para que
+    # docker no la reconstruya en cada `up`.
+    build: ./docker/postgres
+    image: hack-postgres:18
     environment:
       POSTGRES_USER: hack
       POSTGRES_PASSWORD: hack

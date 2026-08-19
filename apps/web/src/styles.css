@@ -1,0 +1,143 @@
+/* Sistema de estilos del template. Tokens primero, componentes después; sin
+   framework CSS: son 200 líneas y cualquiera las lee entera en un minuto. */
+
+:root {
+  --bg: #fbfbfd; --card: #fff; --text: #16181d; --muted: #6b7280;
+  --line: #e5e7eb; --accent: #2563eb; --accent-text: #fff;
+  --error: #b91c1c; --ok: #15803d; --ok-bg: #f0fdf4; --hover: #f3f4f6;
+  /* Escala de radios: contenedor y control. Dos pasos, nada más. */
+  --r-card: 12px; --r-control: 8px;
+  --t-title: 1.75rem; --t-small: 0.8125rem;
+  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d0f14; --card: #161920; --text: #e8eaed; --muted: #9aa1ac;
+    --line: #262a33; --accent: #5b8cff; --accent-text: #0d0f14;
+    --error: #f87171; --ok: #4ade80; --ok-bg: #0f2417; --hover: #1d212a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1 { font-size: var(--t-title); margin: 0 0 .25rem; letter-spacing: -.02em; }
+h2 { font-size: 1.125rem; margin: 0 0 .75rem; letter-spacing: -.01em; }
+p { margin: 0 0 1rem; }
+a { color: var(--accent); }
+
+.sub { color: var(--muted); font-size: var(--t-small); margin: 0 0 1.75rem; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); }
+.small { font-size: var(--t-small); }
+.error { color: var(--error); }
+.row { display: flex; gap: .5rem; align-items: center; }
+.grow { flex: 1; min-width: 0; }
+
+/* ─── contenedores ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--r-card); padding: 1.25rem;
+}
+.card + .card { margin-top: 1rem; }
+
+/* ─── controles ────────────────────────────────────────────────────────── */
+input, textarea, select {
+  width: 100%; padding: .625rem .75rem; font: inherit;
+  color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: var(--r-control);
+}
+textarea { resize: vertical; min-height: 7rem; font-family: var(--mono); font-size: var(--t-small); }
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+button {
+  padding: .625rem 1.1rem; font: inherit; font-weight: 550; cursor: pointer;
+  color: var(--accent-text); background: var(--accent);
+  border: 0; border-radius: var(--r-control); white-space: nowrap;
+}
+button:disabled { opacity: .5; cursor: default; }
+button.ghost {
+  color: var(--text); background: transparent; border: 1px solid var(--line);
+}
+button.ghost:hover:not(:disabled) { background: var(--hover); }
+button.link { color: var(--muted); background: none; padding: .25rem; font-weight: 400; }
+button.link:hover { color: var(--text); }
+
+/* ─── etiquetas de estado ──────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: .4rem;
+  padding: .35rem .7rem; font-size: var(--t-small); font-weight: 550;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--line); border-radius: 999px;
+}
+.badge svg { width: 1rem; height: 1rem; flex: none; }
+.badge.ok { color: var(--ok); background: var(--ok-bg); border-color: currentColor; }
+.badge.bad { color: var(--error); border-color: currentColor; }
+.badge.check { animation: pulse 1s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .badge.check { animation: none; } }
+
+/* ─── layout de la app ─────────────────────────────────────────────────── */
+.shell { display: grid; grid-template-columns: 15rem 1fr; min-height: 100vh; }
+.side {
+  padding: 1.75rem 1rem; border-right: 1px solid var(--line); background: var(--card);
+}
+.brand {
+  display: flex; align-items: center; gap: .5rem;
+  margin: 0 0 1.75rem; padding: 0 .5rem; font-weight: 650; letter-spacing: -.01em;
+}
+.brand svg { width: 1.5rem; height: 1.5rem; color: var(--accent); }
+.nav { display: flex; flex-direction: column; gap: .15rem; }
+.nav a {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .55rem .65rem; border-radius: var(--r-control);
+  color: var(--muted); text-decoration: none; font-size: .9375rem;
+}
+.nav a:hover { background: var(--hover); color: var(--text); }
+.nav a.active { background: var(--hover); color: var(--text); font-weight: 550; }
+.nav a svg { width: 1.15rem; height: 1.15rem; flex: none; }
+.nav .group { margin: 1.1rem 0 .35rem; padding: 0 .65rem; font-size: .6875rem;
+  text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+
+main { padding: 2.5rem 2rem; max-width: 62rem; width: 100%; }
+
+@media (max-width: 720px) {
+  .shell { grid-template-columns: 1fr; }
+  .side { border-right: 0; border-bottom: 1px solid var(--line); padding: 1rem; }
+  .nav { flex-direction: row; flex-wrap: wrap; }
+  .nav .group { display: none; }
+  main { padding: 1.5rem 1.25rem; }
+}
+
+/* ─── listas ───────────────────────────────────────────────────────────── */
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain > li { padding: .7rem 0; border-top: 1px solid var(--line); }
+ul.plain > li:first-child { border-top: 0; }
+
+/* ─── diálogos ─────────────────────────────────────────────────────────── */
+dialog {
+  width: min(32rem, calc(100vw - 2rem)); padding: 1.25rem;
+  color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--r-card);
+}
+dialog::backdrop { background: rgb(0 0 0 / .45); }
+dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .55rem .9rem; }
+dt { color: var(--muted); font-size: var(--t-small); }
+dd { margin: 0; font-size: var(--t-small); font-family: var(--mono); overflow-wrap: anywhere; }
+dd.ok { color: var(--ok); }
+dd.bad { color: var(--error); }
+
+/* ─── estados vacíos y mensajes ────────────────────────────────────────── */
+.empty { color: var(--muted); font-size: .875rem; padding: .7rem 0; }
+.notice {
+  padding: .7rem .9rem; border-radius: var(--r-control); font-size: var(--t-small);
+  border: 1px solid var(--line); background: var(--hover); color: var(--muted);
+}
+.notice.bad { color: var(--error); border-color: currentColor; background: transparent; }

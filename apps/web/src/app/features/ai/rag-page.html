@@ -1,0 +1,67 @@
+<h1>RAG sobre documentos</h1>
+<p class="sub">
+  El texto se parte en pedazos, se vectoriza con el modelo de embeddings y se
+  guarda en pgvector. Al preguntar, el back busca los pedazos más parecidos y se
+  los pasa al modelo como contexto — así responde de tus documentos y no de memoria.
+</p>
+
+<div class="card">
+  <h2>Indexar un documento</h2>
+  <form (submit)="indexar($event)">
+    <input [(ngModel)]="titulo" name="titulo" placeholder="Título del documento"
+           autocomplete="off" style="margin-bottom: .5rem">
+    <textarea [(ngModel)]="contenido" name="contenido"
+              placeholder="Pegá acá el texto: un reglamento, unas actas, la documentación de tu API…"></textarea>
+    <p class="row" style="margin: .75rem 0 0">
+      <button type="submit" [disabled]="indexando()">{{ indexando() ? 'Indexando…' : 'Indexar' }}</button>
+      @if (ultimaIngesta(); as ingesta) {
+        <span class="small muted">«{{ ingesta.title }}» quedó en {{ ingesta.chunks }} pedazos</span>
+      }
+    </p>
+  </form>
+</div>
+
+<div class="card">
+  <h2>Documentos indexados</h2>
+  <ul class="plain">
+    @for (doc of documentos(); track doc.title) {
+      <li class="row" style="justify-content: space-between">
+        <span>{{ doc.title }} <span class="muted small">· {{ doc.chunks }} pedazos</span></span>
+        <button type="button" class="link" (click)="olvidar(doc.title)">Borrar</button>
+      </li>
+    } @empty {
+      <li class="empty">Todavía no hay nada indexado.</li>
+    }
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Preguntar</h2>
+  <form class="row" (submit)="preguntar($event)">
+    <input class="grow" [(ngModel)]="pregunta" name="pregunta" autocomplete="off"
+           placeholder="¿Qué dice el documento sobre…?">
+    <button type="submit" [disabled]="preguntando()">{{ preguntando() ? 'Buscando…' : 'Preguntar' }}</button>
+  </form>
+
+  @if (error(); as mensaje) {
+    <p class="notice bad" style="margin-top: 1rem">{{ mensaje }}</p>
+  }
+
+  @if (respuesta(); as resultado) {
+    <p style="white-space: pre-wrap; margin: 1rem 0 0">{{ resultado.answer }}</p>
+
+    @if (resultado.sources.length) {
+      <h2 style="margin-top: 1.5rem">De dónde salió</h2>
+      <ul class="plain">
+        @for (fuente of resultado.sources; track fuente.id) {
+          <li>
+            <p class="small muted" style="margin: 0 0 .25rem">
+              {{ fuente.documentTitle }} · similitud {{ fuente.score | number: '1.2-2' }}
+            </p>
+            <p class="small" style="margin: 0">{{ fuente.content }}</p>
+          </li>
+        }
+      </ul>
+    }
+  }
+</div>

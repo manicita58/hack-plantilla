@@ -1,0 +1,66 @@
+<h1>Geovisor</h1>
+<p class="sub">
+  Leaflet sobre OpenStreetMap, capas servidas desde PostGIS. El mapa pide solo lo
+  que entra en pantalla (bbox + índice GIST), no la tabla entera.
+</p>
+
+<div class="card" style="padding: 0; overflow: hidden">
+  <div #mapa class="mapa"></div>
+</div>
+
+<div class="card">
+  <div class="row" style="flex-wrap: wrap; gap: .5rem">
+    <input class="grow" [(ngModel)]="nombre" name="nombre" placeholder="Nombre de la feature"
+           autocomplete="off" style="min-width: 12rem">
+    <input [(ngModel)]="categoria" name="categoria" placeholder="Categoría"
+           autocomplete="off" style="width: 9rem">
+    <button type="button" [class.ghost]="!agregando()" (click)="alternarAgregar()">
+      {{ agregando() ? 'Cancelar' : 'Agregar en el mapa' }}
+    </button>
+    <button type="button" class="ghost" (click)="cercaDelCentro()">Cerca del centro</button>
+  </div>
+
+  @if (agregando()) {
+    <p class="notice" style="margin-top: .75rem">Hacé click en el mapa para poner «{{ nombre || 'sin nombre' }}».</p>
+  }
+  @if (error(); as mensaje) {
+    <p class="notice bad" style="margin-top: .75rem">{{ mensaje }}</p>
+  }
+</div>
+
+<div class="card">
+  <h2>{{ tituloLista() }}</h2>
+  <ul class="plain">
+    @for (feature of visibles(); track feature.properties.id) {
+      <li class="row" style="justify-content: space-between">
+        <span>
+          {{ feature.properties.name }}
+          <span class="muted small">· {{ feature.properties.category }}</span>
+          @if (feature.properties.distanceMeters !== undefined) {
+            <span class="muted small"> · a {{ feature.properties.distanceMeters | number: '1.0-0' }} m</span>
+          }
+        </span>
+        <span class="row">
+          <button type="button" class="link" (click)="centrar(feature)">Centrar</button>
+          <button type="button" class="link" (click)="borrar(feature)">Borrar</button>
+        </span>
+      </li>
+    } @empty {
+      <li class="empty">No hay features en esta vista. Movete o agregá una.</li>
+    }
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Por categoría</h2>
+  <ul class="plain">
+    @for (fila of stats(); track fila.category) {
+      <li class="row" style="justify-content: space-between">
+        <span>{{ fila.category }}</span>
+        <span class="mono small muted">{{ fila.features }}</span>
+      </li>
+    } @empty {
+      <li class="empty">Sin datos.</li>
+    }
+  </ul>
+</div>
