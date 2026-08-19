@@ -139,6 +139,9 @@ make break    # -> {"valid":false,"blocks":3,"brokenAt":1}
 
 `make break` es un `UPDATE` crudo por psql, por fuera de la API: exactamente el
 ataque que la cadena existe para delatar. Recargá el front y el escudo está rojo.
+La cadena queda rota hasta que devuelvas el contenido original o corras
+`make reset` — y los tests de integración fallan mientras tanto, que es
+justamente lo que tiene que pasar.
 
 No hay red, ni consenso, ni wallets: es un ledger a prueba de manipulación dentro
 de tu propio Postgres. Las filas creadas antes de la migración `V2` no son bloques

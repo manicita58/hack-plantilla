@@ -88,6 +88,10 @@ jobs:
             set -euo pipefail
             cd /opt/hack
             git pull origin main
+            # La base la construye el propio server (Postgres 18 + PostGIS +
+            # pgvector; ver docker/postgres). Es no-op cuando ya está al día, y
+            # sin esto las migraciones V4/V5 fallan y la API queda en crash-loop.
+            docker compose -f docker-compose.prod.yml up -d --build --wait db
             docker compose -f docker-compose.prod.yml pull api
             # Sin paso de migraciones: Flyway las corre solo al arrancar la app.
             docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps api
