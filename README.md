@@ -288,6 +288,28 @@ En el front el mapa recarga la capa en cada `moveend`, y los puntos son
 `circleMarker` en vez de `marker`: el ícono por defecto de Leaflet apunta a PNGs
 por ruta relativa y se rompe al empaquetar.
 
+## Ramas
+
+| Rama | Qué hace al pushear |
+|---|---|
+| `dev` | tests + build de la imagen como `:dev` + compila el front. **No toca el server.** |
+| `main` | lo mismo, pero publica `:latest` y despliega en el VPS |
+
+Liberar es mergear `dev` en `main`:
+
+```bash
+git switch dev && git push origin dev      # valida en CI, sin desplegar
+git switch main && git merge dev && git push origin main    # esto sí despliega
+```
+
+Los PRs contra cualquiera de las dos corren los tests y compilan, pero no
+publican imagen: el token de un PR desde un fork no puede escribir en GHCR, y el
+job fallaría por permisos y no por el código.
+
+Cloudflare Pages, en cambio, construye **cada rama**: `main` va al dominio de
+producción y `dev` queda en una preview URL propia. Eso viene de fábrica, no hay
+nada que configurar.
+
 ## Desplegarlo — paso a paso
 
 Reemplazá `hack` por el nombre real del proyecto y `tudominio.com` por el tuyo.

@@ -5,11 +5,12 @@ name: web
 # acá y no te enteres cuando la demo ya está en pantalla.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths:
       - 'apps/web/**'
       - '.github/workflows/web.yml'
   pull_request:
+    branches: [main, dev]
     paths:
       - 'apps/web/**'
 

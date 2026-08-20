@@ -1,9 +1,19 @@
 name: deploy
 
+# `main` es producción: lo que entra ahí se despliega. `dev` es integración:
+# corre los tests y publica la imagen como `:dev`, pero NO toca el server.
+# Liberar = merge de dev a main.
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     # Sin este filtro, cada cambio de README dispara un deploy.
+    paths:
+      - 'apps/api/**'
+      - 'docker/**'
+      - '.github/workflows/deploy.yml'
+      - 'docker-compose.prod.yml'
+  pull_request:
+    branches: [main, dev]
     paths:
       - 'apps/api/**'
       - 'docker/**'
@@ -50,6 +60,9 @@ jobs:
 
   build:
     needs: test
+    # En un PR no se publica imagen: el token de un PR desde un fork no tiene
+    # permiso de escritura en GHCR y el job fallaría por eso y no por el código.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,14 +79,18 @@ jobs:
         with:
           context: ./apps/api
           push: true
+          # `main` publica `:latest`, que es lo que pullea el server. `dev`
+          # publica `:dev`: queda construida y probada, sin poder llegar a prod.
           tags: |
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.ref_name == 'main' && 'latest' || github.ref_name }}
             ${{ env.IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
     needs: build
+    # El único job atado a producción. Sin esto, un push a dev desplegaría.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: appleboy/ssh-action@v1
